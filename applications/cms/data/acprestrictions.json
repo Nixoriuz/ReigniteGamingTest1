@@ -1,0 +1,54 @@
+{
+    "pages": {
+        "pages": {
+            "page_add": "page_add",
+            "page_edit": "page_edit",
+            "page_delete": "page_delete",
+            "page_manage": "page_manage",
+            "page_permissions": "page_permissions"
+        },
+        "blocks": {
+            "block_manage": "block_manage",
+            "block_add": "block_add",
+            "block_edit": "block_edit",
+            "block_delete": "block_delete"
+        },
+        "templates": {
+            "template_manage": "template_manage",
+            "template_add_edit": "template_add_edit",
+            "template_delete": "template_delete"
+        },
+        "menu": {
+            "manage": "menu_manage",
+            "add": "menu_add",
+            "edit": "menu_edit",
+            "delete": "menu_delete"
+        }
+    },
+    "databases": {
+        "databases": {
+            "databases_manage": "databases_manage",
+            "databases_edit": "databases_edit",
+            "databases_delete": "databases_delete",
+            "databases_add": "databases_add"
+        },
+        "fields": {
+            "fields_manage": "fields_manage",
+            "fields_add": "fields_add",
+            "fields_edit": "fields_edit",
+            "fields_delete": "fields_delete"
+        },
+        "categories": {
+            "categories_manage": "categories_manage",
+            "categories_add": "categories_add",
+            "categories_edit": "categories_edit",
+            "categories_delete": "categories_delete"
+        },
+        "records": {
+            "records_manage": "records_manage",
+            "records_add": "records_add",
+            "records_edit": "records_edit",
+            "records_delete": "records_delete"
+        }
+    }
+}

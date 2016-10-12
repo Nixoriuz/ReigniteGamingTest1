@@ -1,0 +1,1615 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<javascript app="gallery">
+ <file javascript_app="gallery" javascript_location="front" javascript_path="controllers/browse" javascript_name="ips.browse.list.js" javascript_type="controller" javascript_version="100045" javascript_position="1000050">/**
+ * IPS Social Suite 4
+ * (c) 2013 Invision Power Services - http://www.invisionpower.com
+ *
+ * ips.browse.list.js - Gallery browse list controller
+ *
+ * Author: Rikki Tissier
+ */
+;( function($, _, undefined){
+	&quot;use strict&quot;;
+
+	ips.controller.register('gallery.front.browse.list', {
+
+		initialize: function () {
+			this.on( 'change', '[data-role=&quot;moderation&quot;]', this.selectImage );
+			this.on( 'tableRowsUpdated', this.rowsUpdated );
+		},
+
+		/**
+		 * Refreshes the patchwork when table rows are updated
+		 *
+		 * @returns {void}
+		 */
+		rowsUpdated: function () {
+			var patchwork = ips.ui.photoLayout.getObj( this.scope );
+
+			if( patchwork ){
+				patchwork.refresh();
+			}
+		},
+
+		/**
+		 * Toggles classes when the moderation checkbox is checked
+		 *
+		 * @param	{event} 	e 		Event object
+		 * @returns {void}
+		 */
+		selectImage: function (e) {
+			// e.stopPropagation();
+			// Can't do that or the moderator floating menu never shows up
+
+			var row = $( e.currentTarget ).closest('.cGalleryImageItem');
+			row.toggleClass( 'cGalleryImageItem_selected', $( e.currentTarget ).is(':checked') );
+
+			//return false;
+		}
+	});
+}(jQuery, _));</file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="controllers/submit" javascript_name="ips.submit.existingAlbums.js" javascript_type="controller" javascript_version="100045" javascript_position="1000100">/**
+ * IPS Social Suite 4
+ * (c) 2013 Invision Power Services - http://www.invisionpower.com
+ *
+ * ips.submit.existingAlbums.js - Allows user to select an existing gallery album
+ *
+ * Author: Rikki Tissier
+ */
+;( function($, _, undefined){
+	&quot;use strict&quot;;
+
+	ips.controller.register('gallery.front.submit.existingAlbums', {
+
+		initialize: function () {
+			this.on( 'click', '[data-action=&quot;chooseAlbum&quot;]', this.chooseAlbum );			
+		},
+
+		chooseAlbum: function (e) {
+			e.preventDefault();
+
+			// Submit the request via ajax and see what we get back
+			var link = $( e.currentTarget ); 
+			var url = link.attr('href');
+
+			ips.getAjax()( url )
+				.done( function (response) {
+					link.trigger( 'closeDialog' );
+					$( document ).trigger( 'albumSelected', response );
+				});
+		}
+	});
+}(jQuery, _));</file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="controllers/submit" javascript_name="ips.submit.main.js" javascript_type="controller" javascript_version="100045" javascript_position="1000100"><![CDATA[/**
+ * IPS Social Suite 4
+ * (c) 2013 Invision Power Services - http://www.invisionpower.com
+ *
+ * ips.submit.main.js - Main submit controller
+ *
+ * Author: Rikki Tissier
+ */
+;( function($, _, undefined){
+	"use strict";
+
+	ips.controller.register('gallery.front.submit.main', {
+
+		_changedForm: false,
+
+		initialize: function () {
+			this.on( 'click', '[data-role="uploadedImages"] li a', this.switchImage );
+			this.on( 'submit', '[data-role="editForm"] form', this.submitImageForm );
+			this.on( 'click', '[data-action="changeAlbum"]', this.changeAlbum );
+			this.on( 'click', '[data-action="deleteImage"]', this.deleteImage );
+			this.on( 'submitDialog', '[data-action="createAlbum"]', this.createAlbum );
+			this.on( 'change', '[data-role="editForm"] form :input', this.inputChanged );
+			this.on( 'click', '[data-action="finish"]', this.finishInformation );
+
+			$( document ).on( 'albumSelected', _.bind( this.albumSelected, this ) );
+		},
+
+		/**
+		 * Called when an input in the edit form is changed
+		 *
+		 * @param		{event}		e			Event object
+		 * @returns		{void}
+		 */		
+		inputChanged: function (e) {
+			this._changedForm = true;
+		},
+
+		finishInformation: function (e) {
+
+			// Find out whether there's any images with no info saved
+			var carousel = this.scope.find('.cDownloadsCarousel');
+			var unsavedCount = carousel.find('.ipsCarousel_item:not( .cGallerySubmit_done ):not( .cGallerySubmit_excess )').length;
+
+			if( unsavedCount && carousel.find('li').length > 1){
+				e.preventDefault();
+
+				ips.ui.alert.show( {
+					type: 'confirm',
+					icon: 'warn',
+					message: ips.getString('images_without_data', { count: ips.pluralize( ips.getString( 'count_image' ), unsavedCount ) }),
+					subText: ips.getString('images_without_data_desc'),
+					callbacks: {
+						ok: function () {
+							window.location = $( e.currentTarget ).attr('href');
+						}
+					}
+				});
+			}
+		},
+
+		deleteImage: function (e) {
+			e.preventDefault();
+			var link = $( e.currentTarget );
+			var self = this;
+
+			ips.getAjax()( link.attr('href') )
+				.done( function (response) {
+					var carousel = self.scope.find('.cDownloadsCarousel');
+					var numberOfItems = 0;
+
+					// Update the excess count if necessary
+					if( self.scope.find('.cGallerySubmit_excess').length ){
+						numberOfItems = carousel.find('.ipsCarousel_item:not( .cGallerySubmit_excess )').length;
+					}
+
+					// Remove the one we deleted
+					carousel.find('.cGallerySubmit_current').remove();
+					self._replaceForm( response.nextForm );
+					self._selectItem( response.nextType, response.nextID );
+					self._setFormLoading( false );
+
+					if( numberOfItems ){
+						carousel.find('.ipsCarousel_item').slice( 0, numberOfItems ).removeClass('cGallerySubmit_excess');
+					}
+				});
+		},
+
+		/**
+		 * Called when an album has been created in a dialog
+		 *
+		 * @param		{event}		e			Event object
+		 * @param		{object} 	data 		Event data
+		 * @returns		{void}
+		 */
+		createAlbum: function (e, data) {
+			this._changeAlbumInfo( 'new_album', data.response.maxImages || null, data.response.name );
+		},
+
+		/**
+		 * Called when an existing album has been chosen by the user
+		 *
+		 * @param		{event}		e			Event object
+		 * @param		{object} 	data 		Event data
+		 * @returns		{void}
+		 */
+		albumSelected: function (e, data) {
+			this._changeAlbumInfo( 'existing_album', data.maxImages || null, data.name );
+		},
+
+		/**
+		 * Updates the album row after the user adds/chooses an album
+		 *
+		 * @param		{string} 	lang 		Language string to use
+		 * @param 		{number} 	maxImages 	The maximum number of images that will be saved
+		 * @param		{string}	albumName	Event object
+		 * @returns		{void}
+		 */
+		_changeAlbumInfo: function (lang, maxImages, albumName) {
+			var self = this;
+			var images = this.scope.find('.cDownloadsCarousel > li');
+			var count = images.length;
+
+			var words = ips.getString( lang, {
+				count: ips.pluralize( ips.getString( 'count_images' ), ( maxImages > 0 && count > maxImages ) ? maxImages : count ),
+				album: albumName
+			});
+
+			this.scope.find('[data-role="albumChosen"]').show().find('[data-role="text"]').html( words ).show();
+			this.scope.find('[data-role="albumChoice"]').hide();
+
+			setTimeout( function () {
+				ips.utils.anim.go( 'pulseOnce', self.scope.find('[data-role="albumChosen"]') );	
+			}, 500)
+
+			// Do we need to mark any images as 'excess'?
+			if( maxImages > 0 && count > maxImages ){
+				var excess = images.slice( maxImages );
+				excess.addClass('cGallerySubmit_excess');
+			}
+		},
+
+		/**
+		 * User clicks the 'change' link to edit the album being saved to
+		 *
+		 * @param		{event}		e			Event object
+		 * @returns		{void}
+		 */
+		changeAlbum: function (e) {
+			e.preventDefault();
+
+			this.scope.find('[data-role="albumChosen"]').hide();
+			this.scope.find('[data-role="albumChoice"]').show();
+			this.scope.find('.cDownloadsCarousel .cGallerySubmit_excess').removeClass('cGallerySubmit_excess');
+
+			ips.getAjax()( ips.getSetting('baseURL') + 'index.php?app=gallery&module=gallery&controller=submit&do=clearAlbum' );
+		},
+
+		/**
+		 * User has clicked a specific image to edit
+		 *
+		 * @param		{event}		e			Event object
+		 * @returns		{void}
+		 */
+		switchImage: function (e) {
+			e.preventDefault();
+
+			var self = this;
+			var link = $( e.currentTarget );
+			var item = link.closest('.ipsCarousel_item');
+			var type = item.attr('data-type');
+			var id = item.attr('data-index');
+
+			var doSwitchImage = function () {
+				self._setFormLoading( true );
+
+				ips.getAjax()( link.attr('href') )
+					.done( function (response) {
+						self._replaceForm( response );
+						self._selectItem( type, id );
+						self._setFormLoading( false );
+					});	
+			};
+
+			// Warn user about unsaved data
+			if( this._changedForm ){
+				ips.ui.alert.show( {
+					type: 'confirm',
+					icon: 'warn',
+					message: ips.getString('unsaved_image_data'),
+					subText: ips.getString('unsaved_image_data_desc'),
+					callbacks: {
+						ok: function () {
+							doSwitchImage();
+						}
+					}
+				});
+			} else {
+				doSwitchImage();
+			}			
+		},
+
+		/**
+		 * Event handler for submitting a form
+		 *
+		 * @param		{event}		e			Event object
+		 * @returns		{void}
+		 */
+		submitImageForm: function (e) {
+			e.preventDefault();
+
+			var self = this;
+			var form = $( e.currentTarget );
+
+			form.find('button[type="submit"]').prop( 'disabled', true ).text( ips.getString('saving') );
+
+			this._setFormLoading( true );
+
+			ips.getAjax()( form.action, {
+				data: form.serialize(),
+				dataType: 'json',
+				method: form.attr('method')
+			})
+				.done( function (response) {
+					console.log('-------');
+					console.log(response);
+					console.log('-------');
+					if( response.done ){
+						window.location = self.scope.find('[data-action="finish"]').attr('href');
+					} else {
+						self._replaceForm( response.nextForm );
+						self._selectItem( response.nextType, response.nextID, true );	
+					}					
+				})
+				.fail( function (jqXHR, textStatus, errorThrown) {
+					self._replaceForm( jqXHR.responseText );
+				})
+				.always( function () {
+					self._setFormLoading( false );
+				});
+		},
+
+		/**
+		 * Replaces the current edit form with the new content
+		 *
+		 * @param		{string}	contents	New form contents
+		 * @returns		{void}
+		 */
+		_replaceForm: function (contents) {
+			// This method doesn't check this flag, it just resets it
+			this._changedForm = false;
+
+			// Replace the form with the new form
+			var editArea = this.scope.find('[data-role="editForm"]');
+
+			editArea.css({
+				height: editArea.height() + 'px'
+			});
+
+			editArea.html( contents );
+			ips.utils.anim.go( 'fadeIn fast', editArea );
+			$( document ).trigger('contentChange', [ editArea ]);
+
+			$('html, body').animate( { scrollTop: this.scope.find('#elImageInfo').offset().top } );
+		},
+
+		/**
+		 * Sets the loading status of the form
+		 *
+		 * @param		{boolean}	state		Show as loading?
+		 * @returns		{void}
+		 */
+		_setFormLoading: function (state) {
+			var form = this.scope.find('[data-role="editForm"]');
+			if( state ){
+				form.animate( { opacity: 0.6 }, 'fast' );
+
+				var dims = ips.utils.position.getElemDims( form );
+				var position = ips.utils.position.getElemPosition( form );
+
+				this.scope.append( $('<div/>').addClass('ipsLoading').attr('data-role', 'loading').css({
+					left: position.viewportOffset.left + 'px',
+					top: position.viewportOffset.top + 'px',
+					width: dims.width + 'px',
+					height: dims.height + 'px',
+					position: 'absolute',
+					zIndex: ips.ui.zIndex()
+				}) );
+			} else {
+				form.animate( { opacity: 1 }, 'fast' );
+				this.scope.find('[data-role="loading"]').remove();
+			}			
+		},
+
+		/**
+		 * Highlights an item in the image slider
+		 *
+		 * @param		{string}	type		The type of item being highlighted (images or movies)
+		 * @param		{string} 	id 			Index of the item being highlighted
+		 * @param 		{boolean} 	markCurrentAsDone 	Show the current item as 'done' before switching?
+		 * @returns		{void}
+		 */
+		_selectItem: function (type, id, markCurrentAsDone) {
+			var allImages = this.scope.find('[data-role="uploadedImages"]');
+			var currentItem = allImages.find('.cGallerySubmit_current');
+
+			// Make the new item active in the slider
+			currentItem		
+				.removeClass('cGallerySubmit_current')
+				.toggleClass( 'cGallerySubmit_done', ( markCurrentAsDone === true || currentItem.hasClass('cGallerySubmit_done') ) ? true : false );
+					
+			allImages
+				.find('[data-type="' + type + '"][data-index="' + id + '"]')
+					.addClass('cGallerySubmit_current');
+		}
+	});
+}(jQuery, _));]]></file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="controllers/view" javascript_name="ips.view.image.js" javascript_type="controller" javascript_version="100045" javascript_position="1000150"><![CDATA[/**
+ * IPS Social Suite 4
+ * (c) 2013 Invision Power Services - http://www.invisionpower.com
+ *
+ * ips.view.image.js - Image controller
+ *
+ * Author: Rikki Tissier
+ */
+;( function($, _, undefined){
+	"use strict";
+
+	ips.controller.register('gallery.front.view.image', {
+
+		_sizeBuffer: 80,
+		_ajaxObj: null,
+		_scrolling: false,
+
+		initialize: function () {
+			this.on( 'click', '[data-action="setAsCover"]', this.setAsCover );
+			this.on( 'click', '[data-action="setAsProfile"]', this.setAsProfile );
+			this.on( 'click', '[data-action="nextImage"]', this.nextImage );
+			this.on( 'click', '[data-action="prevImage"]', this.prevImage );
+			this.on( 'click', '[data-action="next"]:not( [data-disabled] )', this.nextCollection );
+			this.on( 'click', '[data-action="prev"]:not( [data-disabled] )', this.prevCollection );
+			this.on( 'click', '[data-role="collection"] [data-imageID]', this.clickImage );
+			this.on( document, 'keydown', this.keyDown );
+			this.on( window, 'resize', this.windowResize );
+
+			// Primary event that watches for URL changes
+			History.Adapter.bind( window, 'statechange', _.bind( this.stateChange, this ) );
+
+			this.setup();
+		},
+
+		/**
+		 * Setup method
+		 *
+		 * @returns {void}
+		 */
+		setup: function () {
+			this._setUpSizing();
+		},
+
+		/**
+		 * Handles URL state changes
+		 *
+		 * @returns {void}
+		 */
+		stateChange: function () {
+			var state = History.getState();
+
+			if( state.data.controller != 'gallery.front.view.image' ){
+				return;
+			}
+
+			this._scrollPage();
+			this._loadURL( state.url );
+			this._scrollToImage( state.data.imageID );
+		},
+
+		/**
+		 * Scrolls the page to the image
+		 *
+		 * @returns {void}
+		 */
+		_scrollPage: function () {
+			if( this._scrolling ){
+				return;
+			}
+
+			var self = this;
+			this._scrolling = true;
+
+			// Get top postition of table
+			var elemPosition = ips.utils.position.getElemPosition( this.scope );
+			$('html, body').animate( { scrollTop: elemPosition.absPos.top + 'px' }, function () {
+				self._scrolling = false;
+			} );
+		},
+		
+		/**
+		 * Handles the keyDown event for navigating photos
+		 *
+		 * @returns {void}
+		 */
+		keyDown: function (e) {
+			switch( e.keyCode ){
+				case ips.ui.key.LEFT:
+					this.scope.find('[data-action="prevImage"]').click();
+				break;
+				case ips.ui.key.RIGHT:
+					this.scope.find('[data-action="nextImage"]').click();
+				break;
+			}
+		},
+
+		/**
+		 * An image in the slider was clicked on
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		clickImage: function (e) {
+			e.preventDefault();
+			var link = $( e.currentTarget ).find('a');
+			var url = link.attr('href');
+			var id = $( e.currentTarget ).attr('data-imageID');
+			var title = link.attr('title');
+
+			History.pushState( {
+				controller: 'gallery.front.view.image',
+				imageID: id
+			}, title, url );
+			//this._scrollToImage( imageID );
+		},
+
+		/**
+		 * Scrolls the slider to the specified image
+		 *
+		 * @param 	{number}		imageID 	Image ID to scroll to
+		 * @returns {void}
+		 */
+		_scrollToImage: function (imageID) {
+			var self = this;
+			var collection = this.scope.find('[data-role="collection"]');
+			var collectionItems = collection.find('li');
+			var toLoad = 0;
+			var newItems = [];
+
+			// Find the image ID we're navigating to
+			var item = collectionItems.filter('[data-imageID="' + imageID + '"]');
+
+			if( !item.length ){
+				Debug.error("Couldn't find the image in the slider");
+				return;
+			}
+
+			var currentlyActive = collection.find('.cGalleryAlbumSlider_active');
+
+			// Make sure there's at least 2 before and 2 after
+			var index = collectionItems.index( item.get(0) );
+			var toLoadPrev = 0;
+			var toLoadNext = 0;
+			var newPrevItems = [];
+			var newNextItems = [];
+			var newPrevID = 0;
+			var newNextID = 0;
+
+			// Add any images we need to load at the START of the slider
+			// If the index is less than 3, we need to add placeholders to fill up the extra space
+			if( index < 3 ){
+				newPrevItems = this._addPlaceholders( 'start', 3 - index );
+				collectionItems = collection.find('li');
+
+				// We need to change the left of the slider to compensate for the new items
+				collection.css({
+					left: ( ( collection.position().left + ( newPrevItems.length * 50 ) ) * -1 ) + 'px'
+				});
+
+				// Work out the index
+				for( var i = index; i >= 0; i-- ){
+					var id = $( collectionItems[ i ] ).attr('data-imageID');
+
+					if( !_.isUndefined( id ) ){
+						newPrevID = id;
+					} else {
+						break;
+					}
+				}
+
+				if( newPrevID ){
+					this._loadAndReplace( newPrevID, 'prev', newPrevItems.length, newPrevItems )
+						.done( function (response) {
+							self._updateNavButton( 'prev', response.moreResults );
+						});	
+				}
+			}
+
+			// Add any images we need to load at the END of the slider
+			if( collectionItems.length < ( index + 4 ) ){
+				newNextItems = this._addPlaceholders( 'end', ( index + 4 ) - collectionItems.length );
+				collectionItems = collection.find('li');
+
+				// Work out the index
+				for( var i = index; i < collectionItems.length; i++ ){
+					var id = $( collectionItems[ i ] ).attr('data-imageID');
+
+					if( !_.isUndefined( id ) ){
+						newNextID = id;
+					} else {
+						break;
+					}
+				}
+
+				if( newNextID ){
+					this._loadAndReplace( newNextID, 'next', 10, newNextItems )
+						.done( function (response) {
+							self._updateNavButton( 'next', response.moreResults );
+						});	
+				}				
+			}
+
+
+			// Get the position of the middle image
+			var newLeftPos = item.position().left;
+			var leftPos = parseInt( collection.css('left') ) * -1;
+			var leftIdx = ( ( leftPos ) / 50 );
+			var middleLI = collectionItems.slice( leftIdx + 3, leftIdx + 4 );
+			var middleLeftPos = middleLI.position().left;
+
+			var difference = newLeftPos - middleLeftPos;
+
+			collection.animate({
+				left: "-=" + difference + 'px'
+			});
+
+			collectionItems.removeClass('cGalleryAlbumSlider_active');
+			item.addClass('cGalleryAlbumSlider_active');
+
+						
+		},
+
+		/**
+		 * Paginates to the previous screen of thumbs in the slider
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		prevCollection: function (e) {
+			e.preventDefault();
+			var self = this;
+			var collection = this.scope.find('[data-role="collection"]');
+			var collectionItems = collection.find('li');
+			var toLoad = 0;
+			var newItems = [];
+
+			// Get the first image shown
+			var leftPos = parseInt( collection.css('left') ) * -1;
+			var leftIdx = ( ( leftPos ) / 50 );
+			var leftMostLI = collectionItems.slice( leftIdx, leftIdx + 1 );
+			var leftMostID = leftMostLI.attr('data-imageID');
+
+			// Make sure we have enough elements before this one
+			if( leftIdx < 6 ){
+				toLoad = 6 - leftIdx;
+			}
+
+			var newLeftPos = leftPos * -1;
+
+			if( toLoad > 0 ){
+				// Add spacers for the incoming images
+				newItems = this._addPlaceholders( 'start', toLoad );
+
+				// We need to change the left of the slider to compensate for the new items
+				newLeftPos = ( leftPos + ( newItems.length * 50 ) ) * -1;
+
+				collection.css({
+					left: newLeftPos + 'px'
+				});
+			}
+
+			collection.animate({
+				left: ( newLeftPos + 300 ) + 'px' 
+			});
+
+			// Now load any images we need
+			if( toLoad > 0 ){
+				this._loadAndReplace( leftMostID, 'prev', 6, newItems )
+					.done( function (response) {
+						self._updateNavButton( 'prev', response.moreResults );
+						self._updateNavButton( 'next', true );
+					});	
+			} else {
+				self._updateNavButton( 'next', true );
+			}
+		},
+
+		/**
+		 * Paginates to the next screen of images in the slider
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		nextCollection: function (e) {
+			e.preventDefault();
+			var self = this;
+			var collection = this.scope.find('[data-role="collection"]');
+			var collectionItems = collection.find('li');
+			var toLoad = 0;
+			var newItems = [];
+
+			// Figure out the right-most image
+			var leftPos = parseInt( collection.css('left') ) * 1;
+			var leftIdx = ( ( 350 - leftPos ) / 50 ) - 1;
+
+			// Get the left position
+			var rightMostLI = collectionItems.slice( leftIdx, leftIdx + 1 );
+			var rightMostID = rightMostLI.attr('data-imageID');
+			var rightPos = rightMostLI.position();
+
+			// Make sure we have enough elements after this one
+			if( collectionItems.length < ( leftIdx + 6 ) ){
+				toLoad = ( collectionItems.length + 5 ) - leftIdx;
+			}
+
+			// If we are loading any new images, create a holder and append it to our list
+			if( toLoad > 0 ){
+				// Add spacers for the incoming images
+				newItems = this._addPlaceholders( 'end', toLoad );
+			}
+
+			collection.animate({
+				left: ( rightPos.left * -1 ) + 'px'
+			});
+
+			// Now load any images we need
+			if( toLoad > 0 ){
+				this._loadAndReplace( rightMostID, 'next', 6, newItems )
+					.done( function (response) {
+						self._updateNavButton( 'next', response.moreResults );
+						self._updateNavButton( 'prev', true );
+					});	
+			} else {
+				self._updateNavButton( 'prev', true );
+			}	
+		},
+
+		/**
+		 * Adds placeholder images to the slider in the location specified
+		 *
+		 * @param 	{string}	location 	'start' or 'end'
+		 * @param 	{number} 	count 		Number to add
+		 * @returns {array}		Array of placeholder elements created
+		 */
+		_addPlaceholders: function (location, count) {
+			var collection = this.scope.find('[data-role="collection"]');
+			var newItems = [];
+
+			for( var i = 0; i < count; i++ ){
+				var item = $('<li/>').addClass('cGalleryTrimmedImage ipsAreaBackground ipsLoading_tiny');
+
+				newItems.push( item );
+				
+				if( location == 'end' ){
+					collection.append( item );
+				} else {
+					collection.prepend( item );
+				}
+			}
+
+			return newItems;
+		},
+
+		/**
+		 * Loads more slider images
+		 *
+		 * @param 	{string}	direction 	Which direction we're updating
+		 * @param 	{boolean} 	moreResults	Are there more results to see?
+		 * @returns {void}
+		 */
+		_updateNavButton: function (direction, moreResults) {
+			var elem = this.scope.find('[data-role="collectionNav"] [data-action="' + direction + '"]');
+
+			if( moreResults ){
+				elem.removeAttr('data-disabled');
+			} else {
+				elem.attr( 'data-disabled', true );
+			}
+		},
+
+		/**
+		 * Loads more slider images
+		 *
+		 * @param 	{number}	fromID 		The ID to fetch from
+		 * @param 	{string} 	direction 	next or prev
+		 * @param 	{number} 	count 		Number of items to get
+		 * @param 	{array} 	itemsArray 	Array of placeholders that will be replaced with the loaded images
+		 * @returns {void}
+		 */
+		_loadAndReplace: function (fromID, direction, count, itemsArray) {
+			var deferred = $.Deferred();
+
+			this.scope.find('[data-role="collectionNav"] [data-action]').attr( 'data-disabled', true );
+
+			ips.getAjax()( ips.getSetting('baseURL') + 'index.php?app=gallery&module=gallery&controller=browse&do=getImages&image=' + fromID + '&direction=' + direction + '&count=' + ( count + 1 ) )
+				.done( function (response) {
+					// Now replace each of the placeholders
+					for( var i = 0; i < itemsArray.length; i++ ){
+						if( response[ i ] ){
+							itemsArray[ i ].replaceWith( response[i] );	
+						}							
+					}
+
+					deferred.resolve({
+						moreResults: !( response.length <= count )
+					});
+				});
+
+			return deferred.promise();
+		},
+
+		/**
+		 * Navigates the page to the next image
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		nextImage: function (e) {
+			e.preventDefault();
+
+			var url = $( e.currentTarget ).attr('href');
+			var id = $( e.currentTarget ).attr('data-imageID');
+			var title = $( e.currentTarget ).attr('title');
+
+			History.pushState( {
+				controller: 'gallery.front.view.image',
+				imageID: id
+			}, title, url );
+		},
+
+		/**
+		 * Navigates the page to the previous image
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		prevImage: function (e) {
+			e.preventDefault();
+
+			var url = $( e.currentTarget ).attr('href');
+			var id = $( e.currentTarget ).attr('data-imageID');
+			var title = $( e.currentTarget ).attr('title');
+
+			History.pushState( {
+				controller: 'gallery.front.view.image',
+				imageID: id
+			}, title, url );
+		},
+
+		/**
+		 * Sets the current image as the user's profile picture
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		setAsProfile: function (e) {
+			e.preventDefault();
+
+			var url = $( e.currentTarget ).attr('href');
+
+			ips.ui.alert.show( {
+				type: 'confirm',
+				icon: 'question',
+				message: ips.getString('set_as_photo_confirm'),
+				callbacks: {
+					ok: function () {
+						ips.getAjax()( url, {
+							showLoading: true
+						} )
+							.done( function (response) {
+								ips.ui.flashMsg.show( response.message );
+							})
+							.fail( function () {
+								window.location = url;
+							});
+					}
+				}
+			});
+		},
+
+		/**
+		 * Sets the image as a cover photo
+		 *
+		 * @param	{event} 	e 		Event object
+		 * @returns {void}
+		 */
+		setAsCover: function (e) {
+			e.preventDefault();
+
+			var url = $( e.currentTarget ).attr('href');
+
+			ips.getAjax()( url, {
+				showLoading: true
+			} )
+				.done( function (response) {
+					ips.ui.flashMsg.show( response.message );
+				})
+				.fail( function () {
+					window.location = url;
+				});
+		},
+
+		/**
+		 * Event handler for window resizing
+		 *
+		 * @returns {void}
+		 */
+		windowResize: function () {
+			this._setUpSizing();
+		},
+
+		/**
+		 * Loads the specified URL to fetch a new image
+		 *
+		 * @param 	{string}	url 	URL of new image to fetch
+		 * @returns {void}
+		 */
+		_loadURL: function (url) {
+			var self = this;
+
+			this._setImageLoading( true );
+
+			// Cancel any request running
+			if( this._ajaxObj && _.isFunction( this._ajaxObj.abort ) ){
+				this._ajaxObj.abort();
+			}
+
+			this._ajaxObj = ips.getAjax();
+			this._ajaxObj( url, {
+				dataType: 'json'
+			} )
+				.done( function (response) {
+					self._updateImage( response );
+				})
+				.fail( function( jqXHR, textStatus, errorThrown ) {
+					if( Debug.isEnabled() ){
+						Debug.error( errorThrown );
+					} else {
+						window.location = url;
+					}
+				});
+		},
+
+		/**
+		 * Handles a response from the server with new image info
+		 *
+		 * @param 	{object}	response 	Server response json
+		 * @returns {void}
+		 */
+		_updateImage: function (response) {
+			
+			this.cleanContents();
+
+			this.scope.find('[data-role="imageInfo"]').html( response.info );
+			this.scope.find('[data-role="imageFrame"]').replaceWith( response.image );
+
+			if( response.slider )
+			{
+				this.scope.find('#elGalleryNav > ul').html( response.slider );
+			}
+
+			if( response.image.match( /<video /ig ) )
+			{
+				var thisOptions	= $('#elGalleryVideo').attr('data-setup') ? $.parseJSON( $('#elGalleryVideo').attr('data-setup') ) : {};
+
+				if( _.isUndefined( window.videojs ) )
+				{
+					ips.loader.get( ['gallery/interface/videojs/video.js'] ).then( function() {
+						ips.loader.get( ['gallery/interface/videojs/videojs-loadswf.js'] ).then( function() {
+							var thisOptions	= $('#elGalleryVideo').attr('data-setup') ? $.parseJSON( $('#elGalleryVideo').attr('data-setup') ) : {};
+							videojs( 'elGalleryVideo', thisOptions, function(){});
+						});
+					});
+				}
+				else
+				{
+					videojs.players = {};
+
+					videojs( 'elGalleryVideo', thisOptions, function(){});
+				}
+			}
+			
+			if( response.comments ){
+				this.scope.find('[data-role="imageComments"]').html( response.comments );	
+			} else {
+				this.scope.find('[data-role="imageComments"]').html( '' );
+			}
+
+			// Reinit each area
+			$( document )
+				.trigger( 'contentChange', [ this.scope.find('[data-role="imageInfo"]') ] )
+				.trigger( 'contentChange', [ this.scope.find('[data-role="imageFrame"]') ] )
+				.trigger( 'contentChange', [ this.scope.find('[data-role="imageComments"]') ] );
+
+			this._setUpSizing();
+		},
+
+		/**
+		 * Sets various page elements to a loading state while new data is loaded
+		 *
+		 * @param 	{boolean}		loading 	Are we loading?
+		 * @returns {void}
+		 */
+		_setImageLoading: function (loading) {
+			if( loading ){
+				var description = this.scope.find('[data-role="imageDescription"]');
+				var stats = this.scope.find('[data-role="imageStats"]');
+
+				description
+					.css({
+						height: description.outerHeight() + 'px'
+					})
+					.html('')
+					.addClass('ipsLoading');
+
+				stats
+					.css({
+						height: stats.outerHeight() + 'px'
+					})
+					.html('')
+					.addClass('ipsLoading');
+			} else {
+
+			}
+		},
+
+		/**
+		 * Event handler for saving changes to note text
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		_setUpSizing: function () {
+			var frame = this.scope.find('[data-role="imageFrame"]');
+			var viewportHeight = $( window ).height();
+			var scopeTop = ips.utils.position.getElemPosition( this.scope );
+			var navHeight = this.scope.find('[data-role="collectionNav"]').outerHeight();
+			var maxHeight = viewportHeight - scopeTop.absPos.top - navHeight - this._sizeBuffer;
+			var imageData = frame.attr('data-imageSizes');
+			var ratio = 1;
+
+			if( maxHeight < 400 ){
+				maxHeight = 400;
+			}
+
+			frame.css({
+				height: maxHeight + 'px'
+			});
+
+			if( imageData ){
+				imageData = $.parseJSON( imageData );
+				ratio = imageData['large'][ 0 ] / imageData['large'][ 1 ];
+
+				var innerHeight = frame.innerHeight() - parseInt( frame.css('padding-top') ) - parseInt( frame.css('padding-bottom') );
+				var innerWidth = frame.innerWidth() - parseInt( frame.css('padding-left') ) - parseInt( frame.css('padding-right') );
+				var marginTop = 0;
+				var imageSize = {
+					width: imageData['large'][0],
+					height: imageData['large'][1]
+				};
+
+				if( imageSize['width'] > innerWidth ){
+					imageSize['width'] = innerWidth;
+					imageSize['height'] = Math.round( imageSize['width'] / ratio );
+				}
+
+				if( imageSize['height'] > innerHeight ){
+					imageSize['height'] = innerHeight;
+					imageSize['width'] = Math.round( imageSize['height'] * ratio );
+				}
+
+				var padding = parseInt( frame.css('paddingTop') ) + parseInt( frame.css('paddingBottom') );
+				var marginTop = ( maxHeight - padding - imageSize['height'] ) / 2;
+
+				this.scope
+					.find('[data-role="notesWrapper"], [data-role="theImage"]').css({
+						width: imageSize['width'] + 'px',
+						height: imageSize['height'] + 'px',
+					})
+					.show()
+					.filter('[data-role="notesWrapper"]')
+						.css({
+							marginTop: ( marginTop > 0 ) ? marginTop : 0 + 'px'
+						});
+			}
+		}
+	});
+}(jQuery, _));]]></file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="controllers/view" javascript_name="ips.view.note.js" javascript_type="controller" javascript_version="100045" javascript_position="1000150"><![CDATA[/**
+ * IPS Social Suite 4
+ * (c) 2013 Invision Power Services - http://www.invisionpower.com
+ *
+ * ips.view.note.js - Note controller
+ *
+ * Author: Rikki Tissier
+ */
+;( function($, _, undefined){
+	"use strict";
+
+	ips.controller.register('gallery.front.view.note', {
+
+		_editing: false,
+		_editable: false,
+		_draggingNotEditing: false,
+		_hoverTimerOn: null,
+		_hoverTimerOff: null,
+		_note: '',
+
+		initialize: function () {
+			this.on( 'click', '.cGalleryNote_border', this.startEditing );
+			this.on( 'click', '[data-action="save"]', this.saveNote );
+			this.on( 'click', '[data-action="cancel"]', this.cancelNote );
+			this.on( 'click', '[data-action="delete"]', this.deleteNote );
+			this.on( 'mouseenter', this.mouseEnter );
+			this.on( 'mouseleave', this.mouseLeave );
+			this.setup();
+		},
+
+		/**
+		 * Setup method, builds the note, makes it editable and positions it
+		 *
+		 * @returns {void}
+		 */
+		setup: function () {
+			var self = this;
+
+			if( !_.isUndefined( this.scope.attr('data-editable') ) ){
+				this._editable = true;
+			}
+
+			this._note = this.scope.attr('data-note');
+			this._baseURL = ips.getSetting('baseURL') + 'index.php?app=gallery&module=gallery&controller=notes&imageId=' + this.scope.closest('.cGalleryViewImage').attr('data-imageID');
+
+			this._buildNote();
+			this._setUpEditable();
+			this._initialPosition();
+
+			// If this is a new note, trigger a click on it to put it into editing mode
+			if( this.scope.attr('data-noteID') == 'new' ){
+				this.scope.find('.cGalleryNote_border').click();
+			}
+		},
+
+		/**
+		 * Event handler for saving changes to note text
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		saveNote: function (e) {
+			e.preventDefault();
+			var self = this;
+			var note = this.scope.find('.cGalleryNote_note textarea').val();
+			var savePosition = false;
+
+			if( !$.trim( note ) ){
+				return;
+			}
+			
+			// If this is a new note, we'll save the position too.
+			if( this.scope.attr('data-noteID') == 'new' ){
+				savePosition = true;
+			}
+
+			this._saveNote( note, savePosition )
+				.done( function () {
+					self._note = note;
+					self._stopEditing();
+				});
+		},
+
+		/**
+		 * Event handler for cancelling changes to note text
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		cancelNote: function (e) {
+			e.preventDefault();
+			this._stopEditing();
+		},
+
+		/**
+		 * Event handler for deleting a note. Confirms with user, then triggers ajax request to remove this note
+		 *
+		 * @param 	{event}		e 	Event
+		 * @returns {void}
+		 */
+		deleteNote: function (e) {
+			e.preventDefault();
+			var self = this;
+
+			ips.ui.alert.show( {
+				type: 'confirm',
+				icon: 'question',
+				message: ips.getString('delete_note_confirm'),
+				callbacks: {
+					ok: function () {
+						self._doDeleteNote();
+					}
+				}
+			});
+		},
+
+		/**
+		 * Mouse enter event; shows the note text after a short delay
+		 *
+		 * @returns {void}
+		 */
+		mouseEnter: function () {
+			var self = this;
+
+			if( this._hoverTimerOn ){
+				clearTimeout( this._hoverTimerOn );
+			}
+
+			if( !this._editing ){
+				this._hoverTimerOn = setTimeout( function () {
+					if( !self.scope.find('.cGalleryNote_note').is(':visible') ){
+						ips.utils.anim.go( 'fadeIn fast', self.scope.find('.cGalleryNote_note') );	
+					}				
+				});
+			}
+		},
+
+		/**
+		 * Mouse leave event; hides the note text after a short delay
+		 *
+		 * @returns {void}
+		 */
+		mouseLeave: function () {
+			var self = this;
+
+			if( this._hoverTimerOff ){
+				clearTimeout( this._hoverTimerOff );
+			}
+
+			if( !this._editing ){
+				this._hoverTimerOff = setTimeout( function () {
+					if( self.scope.find('.cGalleryNote_note').is(':visible') ){
+						ips.utils.anim.go( 'fadeOut fast', self.scope.find('.cGalleryNote_note') );	
+					}				
+				});
+			}
+		},
+			
+		/**
+		 * Triggered when the user clicks on the note. Puts the note into editing state,
+		 * and shows a little form to allow the text to be edited
+		 *
+		 * @returns {void}
+		 */
+		startEditing: function () {
+			if( !this._editable || this._draggingNotEditing ){
+				return;
+			}
+
+			this._editing = true;
+
+			this.scope
+				.addClass('cGalleryNote_editing')
+				.append( ips.templates.render('gallery.notes.delete') )
+				.find('.cGalleryNote_note')
+					.html( ips.templates.render('gallery.notes.edit', {
+						note: this._note
+					}))
+					.find('textarea')
+						.focus();
+		},
+
+		/**
+		 * Deletes the note
+		 *
+		 * @returns {void}
+		 */
+		_doDeleteNote: function () {
+			var url = this._baseURL;
+			var self = this;
+
+			ips.getAjax()( url + '&delete=1&id=' + this.scope.attr('data-noteID') )
+				.done( function () {
+					ips.utils.anim.go( 'fadeOutDown', self.scope )
+						.done( function () {
+							self.scope.remove();
+						});
+				})
+		},
+
+		/**
+		 * Saves the note
+		 *
+		 * @param 	{string}		noteContent 	If provided, the updated note text to be saved
+		 * @param 	{boolean} 		savePosition	If true, will update the position info for the note
+		 * @returns {promise}
+		 */
+		_saveNote: function (noteContent, savePosition) {
+			var deferred = $.Deferred();
+			var self = this;
+			var url = this._baseURL;
+			var position = '';
+			var note = '';
+
+			if( this.scope.attr('data-noteID') == 'new' ){
+				url += '&add=1';
+			} else {
+				url += '&edit=1&id=' + this.scope.attr('data-noteID');
+			}
+
+			if( savePosition ){
+				position = this._getPosition();
+			}
+
+			if( noteContent ){
+				note = noteContent;
+			}
+
+			if( this.scope.find('[data-action="save"]').length && note ){
+				this.scope.find('[data-action="save"]').prop('disabled', true).text( ips.getString('saving_note') );
+			}
+
+			// Send request
+			ips.getAjax()( url, {
+				data: {
+					note: note,
+					position: position
+				}
+			})
+				.done( function (response) {
+					if( self.scope.find('[data-action="save"]').length && note ){
+						self.scope.find('[data-action="save"]').prop( 'disabled', false ).text( 'Save' );
+					}
+
+					// If this was a new note and the server returned an ID, update our attribute
+					if( _.isObject( response ) && response.id ){
+						self.scope.attr( 'data-noteID', response.id );
+					}
+
+					deferred.resolve();
+				})
+				.fail( function () {
+					deferred.reject();
+				});
+
+			return deferred.promise();
+		},
+
+		/**
+		 * Gets the position and dims of the note, in percentage values (relative to the image) 
+		 *
+		 * @returns {string}  In format <left>,<top>,<width>,<height>
+		 */
+		_getPosition: function () {
+			var position = [];
+			var parent = this.scope.closest('.cGalleryViewImage');
+			var notePos = this.scope.position();
+
+			// Left
+			position[0] = ( notePos['left'] / parent.width() ) * 100;
+			// Top
+			position[1] = ( notePos['top'] / parent.height() ) * 100;
+			// Width
+			position[2] = ( this.scope.width() / parent.width() ) * 100;
+			// Height
+			position[3] = ( this.scope.height() / parent.height() ) * 100;
+
+			return position.join(',');
+		},
+
+		/**
+		 * Takes note out of editing state
+		 *
+		 * @returns {void}
+		 */
+		_stopEditing: function () {
+			this._editing = false;
+			this._draggingNotEditing = false;
+			this.scope
+				.removeClass('cGalleryNote_editing')
+				.find('.cGalleryNote_note')
+					.html( this._note )
+				.end()
+				.find('.cGalleryNote_delete')
+					.remove();
+		},
+
+		/**
+		 * Adds the note text to the note
+		 *
+		 * @returns {void}
+		 */
+		_buildNote: function () {
+			this.scope.find('.cGalleryNote_note').html( this._note );
+		},
+
+		/**
+		 * When the note is editable, loads jQuery UI and sets up resizable/draggable
+		 *
+		 * @returns {void}
+		 */
+		_setUpEditable: function () {
+			if( !this._editable ){
+				return;
+			}
+
+			var self = this;
+
+			ips.loader.get( ['core/interface/jquery/jquery-ui.js'] ).then( function () {
+				self.scope.resizable({
+					handles: 'se',
+					stop: self._updatePosition.bind( self )
+				});
+
+				self.scope.draggable({
+					containment: self.scope.closest('.cGalleryViewImage'),
+					start: self._startDragging.bind( self ),
+					stop: self._updatePosition.bind( self )
+				});
+
+				// A workaround for an issue in resizable, where the container will jump because it uses percentage
+				// sizing, but resizable uses absolute sizing.
+				self.scope.find('.ui-resizable-handle').on('mouseover', function () {
+					self.scope.closest('.cGalleryViewImage').css( {
+						height: self.scope.closest('.cGalleryViewImage').height() + 'px'
+					});
+				});
+			});
+		},
+
+		/**
+		 * Event handler for start event on Draggable. If we aren't already editing, set a flag so that
+		 * when we stop dragging, the click doens't incorrectly put note into editing mode
+		 *
+		 * @returns {void}
+		 */
+		_startDragging: function () {
+			if( !this._editing ){
+				this._draggingNotEditing = true;
+			}
+		},
+
+		/**
+		 * Saves the current position of the note. Called when resizable or draggable stop
+		 *
+		 * @returns {void}
+		 */
+		_updatePosition: function () {
+			var self = this;
+
+			// If this is a new note, we don't want to update the position remotely yet.
+			// We'll only do that once the note text is saved for the first time.
+			if( this.scope.attr('data-noteID') == 'new' ){
+				return;
+			}
+
+			this._saveNote( false, true )
+				.done( function () {
+					// If we were editing before updating pos/dims, we don't want to run the stop method 
+					// otherwise changes to the note text will be lost.
+					if( !self._editing ){
+						self._stopEditing();	
+					}					
+				});
+		},
+
+		/**
+		 * Positions the note based on the attributes on the scope element
+		 *
+		 * @returns {void}
+		 */
+		_initialPosition: function () {
+			var left = this.scope.attr('data-posLeft');
+			var top = this.scope.attr('data-posTop');
+			var width = this.scope.attr('data-dimWidth');
+			var height = this.scope.attr('data-dimHeight');
+
+			// Position the note
+			this.scope.css({
+				left: left + '%',
+				top: top + '%',
+				width: width + '%',
+				height: height + '%'
+			});
+		}
+	});
+}(jQuery, _));]]></file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="controllers/view" javascript_name="ips.view.notes.js" javascript_type="controller" javascript_version="100045" javascript_position="1000150"><![CDATA[/**
+ * IPS Social Suite 4
+ * (c) 2013 Invision Power Services - http://www.invisionpower.com
+ *
+ * ips.view.notes.js - Gallery notes controller
+ *
+ * Author: Rikki Tissier
+ */
+;( function($, _, undefined){
+	"use strict";
+
+	ips.controller.register('gallery.front.view.notes', {
+
+		_inAddingState: false,
+
+		initialize: function () {
+			this.on( document, 'click', '[data-action="addNote"]', this.startAddNote );
+			this.setup();
+		},
+
+		/**
+		 * Setup method
+		 *
+		 * @returns {void}
+		 */
+		setup: function () {
+			var notes;
+
+			try {
+				notes = $.parseJSON( this.scope.attr('data-notesData') );
+			} catch (err) {}
+
+			if( notes && notes.length ){
+				this._buildNotes( notes );
+			}
+		},
+
+		/**
+		 * Adds a new note to the image
+		 *
+		 * @param 	{event}		e 	Event object
+		 * @returns {void}
+		 */
+		startAddNote: function (e) {
+			e.preventDefault();
+
+			this.scope.append( ips.templates.render( 'gallery.notes.wrapper', {
+				id: 'new',
+				left: 50,
+				top: 50,
+				width: ( 100 / this.scope.width() ) * 100,
+				height: ( 100 / this.scope.height() ) * 100,
+				editable: true
+			}));
+
+			$( document ).trigger( 'contentChange', [ this.scope ] );
+		},
+
+		/**
+		 * Builds any existing notes from data attached to our scope element
+		 *
+		 * @param 	{array}		notes 	Array of note data to build from 
+		 * @returns {void}
+		 */
+		_buildNotes: function (notes) {
+			if( notes.length ){
+				for( var i = 0; i < notes.length; i++ ){
+					this.scope.append( ips.templates.render( 'gallery.notes.wrapper', {
+						id: notes[ i ].ID,
+						left: notes[ i ].LEFT,
+						top: notes[ i ].TOP,
+						width: notes[ i ].WIDTH,
+						height: notes[ i ].HEIGHT,
+						note: notes[ i ].NOTE,
+						editable: !_.isUndefined( this.scope.attr('data-editable') ) ? true : false
+					}));
+				}
+
+				$( document ).trigger( 'contentChange', [ this.scope ] );
+			}
+		}
+	});
+}(jQuery, _));]]></file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="templates" javascript_name="ips.templates.browse.js" javascript_type="template" javascript_version="100045" javascript_position="1000200"><![CDATA[ips.templates.set('gallery.patchwork.indexItem', " \
+	{{#showThumb}}\
+		<span class='cGalleryPatchwork_item' style='width: {{dims.width}}px; height: {{dims.height}}px; margin: {{dims.margin}}px {{dims.marginRight}}px {{dims.margin}}px {{dims.marginLeft}}px'>\
+	{{/showThumb}}\
+	{{^showThumb}}\
+		<span class='cGalleryPatchwork_item ipsNoThumb ipsNoThumb_video' style='width: {{dims.width}}px; height: {{dims.height}}px; margin: {{dims.margin}}px {{dims.marginRight}}px {{dims.margin}}px {{dims.marginLeft}}px'>\
+	{{/showThumb}}\
+			<a href='{{image.url}}'>\
+				{{#showThumb}}<img src='{{image.src}}' alt='{{image.caption}}' class='cGalleryPatchwork_image'>{{/showThumb}}\
+				<div class='ipsPhotoPanel ipsPhotoPanel_mini'>\
+					<img src='{{image.author.photo}}' class='ipsUserPhoto ipsUserPhoto_mini'>\
+					<div>\
+						<span class='ipsType_normal ipsTruncate ipsTruncate_line'>{{#lang}}by{{/lang}} {{image.author.name}}</span>\
+						<span class='ipsType_small ipsTruncate ipsTruncate_line'>{{#lang}}in{{/lang}} {{image.container}}</span>\
+					</div>\
+				</div>\
+				{{#image.allowComments}}\
+					<span class='cGalleryPatchwork_comments' data-commentCount='{{image.comments}}'><i class='fa fa-comment'></i> {{image.comments}}</span>\
+				{{/image.allowComments}}\
+			</a>\
+		</span>\
+");]]></file>
+ <file javascript_app="gallery" javascript_location="front" javascript_path="templates" javascript_name="ips.templates.view.js" javascript_type="template" javascript_version="100045" javascript_position="1000200"><![CDATA[ips.templates.set('gallery.notes.wrapper', " \
+<div class='cGalleryNote' data-controller='gallery.front.view.note' data-noteID='{{id}}' data-note=\"{{note}}\" {{#editable}}data-editable{{/editable}} data-posLeft='{{left}}' data-posTop='{{top}}' data-dimWidth='{{width}}' data-dimHeight='{{height}}'>\
+	<div class='cGalleryNote_border'></div>\
+	<div class='cGalleryNote_note' style='display: none'>\
+		{{note}}\
+	</div>\
+</div>\
+");
+
+ips.templates.set('gallery.notes.delete', " \
+	<a href='#' data-action='delete' class='cGalleryNote_delete' data-ipsTooltip title='{{#lang}}delete_note{{/lang}}'>&times;</a>\
+");
+
+ips.templates.set('gallery.notes.edit', " \
+	<textarea>{{note}}</textarea>\
+	<ul class='ipsList_inline'>\
+		<li><button data-action='save' class='ipsButton ipsButton_light ipsButton_verySmall'>{{#lang}}save_note{{/lang}}</button></li>\
+		<li><a href='#' data-action='cancel'>{{#lang}}cancel_note{{/lang}}</a></li>\
+	</ul>\
+");]]></file>
+ <order app="global" path="/dev/js//framework/">templates
+common/ui
+common/utils
+common
+controllers</order>
+ <order app="global" path="/dev/js//library/">underscore
+jquery
+mustache
+jstz
+Debug.js
+app.js</order>
+ <order app="global" path="/dev/js//library//jquery">jquery.js
+jquery.history.js
+jquery.transform.js</order>
+ <order app="global" path="/dev/js//library//xregexp">xregexp-all.js
+xregexp-lookbehind.js</order>
+</javascript>
